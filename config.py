@@ -115,7 +115,7 @@ def on_select(event):
 
 root = tk.Tk()
 root.title("Discord Timezone DRP Config")
-root.minsize(600, 480)
+root.minsize(620, 480)
 root.grid_columnconfigure(0, weight=1)
 root.grid_columnconfigure(1, weight=2)
 root.grid_columnconfigure(2, weight=1)
@@ -131,14 +131,18 @@ except Exception:
     except Exception:
         pass  # don't crash if no icon
 
+# Row 0: Discord Client ID
 tk.Label(root, text="Discord Client ID", font=default_font).grid(row=0, column=0, sticky="w", padx=8, pady=4)
 tk.Label(root, text=CLIENT_ID, font=default_font).grid(row=0, column=1, sticky="w", padx=8, pady=4)
 
+# Row 1: Search + Auto Detect
 tk.Label(root, text="Search Timezone:", font=default_font).grid(row=1, column=0, sticky="w", padx=8, pady=4)
 search_var = tk.StringVar()
 search_entry = tk.Entry(root, textvariable=search_var, width=32, font=default_font)
 search_entry.grid(row=1, column=1, sticky="w", padx=8, pady=4)
+tk.Button(root, text="Auto Detect Timezone", command=auto_detect_timezone, font=default_font).grid(row=1, column=2, padx=8, pady=4)
 
+# Row 2: Timezone Listbox
 tk.Label(root, text="Timezone (Region/City)", font=default_font).grid(row=2, column=0, sticky="w", padx=8, pady=4)
 city_var = tk.StringVar(value="Asia/Tashkent")
 listbox = tk.Listbox(root, height=8, width=32, font=default_font)
@@ -171,21 +175,20 @@ except ValueError:
 search_entry.bind('<KeyRelease>', filter_timezones)
 listbox.bind('<<ListboxSelect>>', on_select)
 
+# Row 3: Image Mode OptionMenu
 tk.Label(root, text="Image Mode", font=default_font).grid(row=3, column=0, sticky="w", padx=8, pady=4)
 tk.OptionMenu(root, image_mode_var, *IMAGE_MODES).grid(row=3, column=1, sticky="w", padx=8, pady=4)
 
+# Row 4: Label Style OptionMenu
 tk.Label(root, text="Label Style", font=default_font).grid(row=4, column=0, sticky="w", padx=8, pady=4)
 tk.OptionMenu(root, label_mode_var, *LABEL_MODES).grid(row=4, column=1, sticky="w", padx=8, pady=4)
 
-action_frame = tk.Frame(root)
-action_frame.grid(row=5, column=0, columnspan=3, pady=12)
-tk.Button(action_frame, text="Save Config", command=save_env, font=default_font).pack(side=tk.LEFT, padx=12)
-tk.Button(action_frame, text="Save and Launch", command=launch_script, font=default_font).pack(side=tk.LEFT, padx=12)
-tk.Button(root, text="Auto Detect Timezone", command=auto_detect_timezone, font=default_font).grid(row=1, column=2, padx=12, pady=4)
+# Row 5: Save/Launch buttons
+tk.Button(root, text="Save Config", command=save_env, font=default_font).grid(row=5, column=0, padx=12, pady=12)
+tk.Button(root, text="Save and Launch", command=launch_script, font=default_font).grid(row=5, column=1, padx=12, pady=12)
 
-button_frame = tk.Frame(root)
-button_frame.grid(row=6, column=0, columnspan=3, pady=12)
-tk.Button(button_frame, text="Report Bug", command=report_bug, font=default_font).pack(side=tk.LEFT, padx=12)
-tk.Button(button_frame, text="Buy Me a Coffee", command=buy_me_coffee, font=default_font).pack(side=tk.LEFT, padx=12)
+# Row 6: Report Bug/Buy Me a Coffee
+tk.Button(root, text="Report Bug", command=report_bug, font=default_font).grid(row=6, column=0, padx=12, pady=12)
+tk.Button(root, text="Buy Me a Coffee", command=buy_me_coffee, font=default_font).grid(row=6, column=1, padx=12, pady=12)
 
 root.mainloop()
