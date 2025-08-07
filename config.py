@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 import os
+import sys
 from zoneinfo import available_timezones, ZoneInfo
 from datetime import datetime
 import threading
@@ -116,18 +117,22 @@ def on_select(event):
 root = tk.Tk()
 root.title("Discord Timezone DRP Config")
 
-# For Windows .ico or PNG (fallback for Linux/Mac)
+def resource_path(filename):
+    # Handles both PyInstaller bundle and source
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, filename)
+    return os.path.join(os.path.abspath("."), filename)
+
+# Then, after creating root:
 try:
-    # .ico for Windows
-    root.iconbitmap("icon.ico")
+    root.iconbitmap(resource_path("icon.ico"))
 except Exception:
-    # fallback: use PNG for Linux/Mac
     try:
         from tkinter import PhotoImage
-        icon = PhotoImage(file="icon.png")
+        icon = PhotoImage(file=resource_path("icon.png"))
         root.iconphoto(True, icon)
     except Exception:
-        pass  # don't crash if no icon
+        pass  # Don't crash if no icon found
 
 tk.Label(root, text="Discord Client ID").grid(row=0, column=0, sticky="w")
 tk.Label(root, text=CLIENT_ID).grid(row=0, column=1, sticky="w")
