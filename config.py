@@ -1,194 +1,102 @@
-import tkinter as tk
-from tkinter import messagebox
 import os
-from zoneinfo import available_timezones, ZoneInfo
-from datetime import datetime
-import threading
-from tzlocal import get_localzone_name
-import webbrowser
+import time
+import asyncio
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from pypresence import AioPresence
 from dotenv import load_dotenv
 
-ENV_FILE = ".env"
-CLIENT_ID = "1402709604588322836"
-IMAGE_MODES = ["Auto", "Day", "Night"]
-LABEL_MODES = ["Abbreviation", "City/Region"]
-presence_thread = None
-stop_event = None
+load_dotenv(override=True)
 
-default_font = ("Arial", 13)
+def run(stop_event=None):
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
+    asyncio.run(presence_loop(stop_event=stop_event))
 
-try:
-    CITIES = sorted([tz for tz in available_timezones() if "/" in tz and not tz.startswith("Etc/")])
-except Exception:
-    CITIES = ["Asia/Tashkent", "America/Los_Angeles", "Europe/London", "Pacific/Honolulu"]
+async def presence_loop(stop_event=None):
+    print("ENV:", {
+        "TIMEZONE_NAME": os.getenv("TIMEZONE_NAME"),
+        "TIMEZONE_LABEL": os.getenv("TIMEZONE_LABEL"),
+        "TIMEZONE_OFFSET": os.getenv("TIMEZONE_OFFSET"),
+        "TIMEZONE_CITY": os.getenv("TIMEZONE_CITY"),
+        "TIMEZONE_ABBREV": os.getenv("TIMEZONE_ABBREV"),
+        "LABEL_MODE": os.getenv("LABEL_MODE"),
+    })
 
-def get_offset_label(tz_name):
-    now = datetime.now(ZoneInfo(tz_name))
-    offset_hours = now.utcoffset().total_seconds() / 3600
-    offset_str = f"{offset_hours:+.1f}" if ".0" not in f"{offset_hours:+.1f}" else f"{int(offset_hours):+d}"
-    abbrev = now.tzname()
-    label = f"{abbrev} (UTC{offset_str})"
-    return label, offset_hours, abbrev
 
-def auto_detect_timezone():
-    try:
-        detected = get_localzone_name()
-        if detected in CITIES:
-            idx = CITIES.index(detected)
-            listbox.selection_clear(0, tk.END)
-            listbox.selection_set(idx)
-            listbox.see(idx)
-            city_var.set(detected)
-            search_var.set(detected)
-            messagebox.showinfo("Detected", f"Detected timezone: {detected}")
+    print("[DRP] Starting async DRP...")
+    client_id = os.getenv("DISCORD_CLIENT_ID", "1402709604588322836")
+    RPC = AioPresence(client_id)
+
+    # Wait for Discord to be ready
+    while True:
+        try:
+            await RPC.connect()
+            print("[DRP] Connected.")
+            break
+        except Exception:
+            print("[DRP] Discord not ready, retrying in 3s...")
+            await asyncio.sleep(3)
+
+    # Load all relevant config
+    tz_name      = os.getenv("TIMEZONE_NAME", "Asia/Tashkent")
+    tz_label     = os.getenv("TIMEZONE_LABEL", "UZT (UTC+5)")
+    tz_offset    = float(os.getenv("TIMEZONE_OFFSET", "5"))
+    tz_city      = os.getenv("TIMEZONE_CITY", "Tashkent")
+    tz_abbrev    = os.getenv("TIMEZONE_ABBREV", "UZT")
+    image_mode   = os.getenv("IMAGE_MODE", "auto").lower()
+    label_mode   = os.getenv("LABEL_MODE", "abbreviation").lower()
+
+    tz = ZoneInfo(tz_name)
+
+    def get_midnight():
+        now = datetime.now(tz)
+        return int(now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+    start_timestamp = get_midnight()
+
+    while True:
+        now = datetime.now(tz)
+        hour = now.hour
+        time_str = now.strftime("%a %I:%M %p")
+
+        # Determine label style
+        if label_mode == "city/region":
+            state_str = tz_city
         else:
-            messagebox.showerror("Not found", f"Detected timezone '{detected}' not in city list.")
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to auto-detect timezone: {e}")
+            state_str = tz_label
 
-def save_env():
-    # Always pull selected item from the listbox
-    try:
-        selected_idx = listbox.curselection()
-        if not selected_idx:
-            tz_name = CITIES[0]  # fallback
-        else:
-            tz_name = listbox.get(selected_idx)
-    except Exception:
-        tz_name = city_var.get()
-    if tz_name not in CITIES:
-        messagebox.showerror("Invalid Timezone", "Please select a valid timezone from the list.")
-        return
-    label, offset, abbrev = get_offset_label(tz_name)
-    image_mode = image_mode_var.get().lower()
-    label_mode = label_mode_var.get().lower()
-    city = tz_name.split('/')[-1].replace('_', ' ')
-    with open(ENV_FILE, "w") as f:
-        f.write(f"DISCORD_CLIENT_ID={CLIENT_ID}\n")
-        f.write(f"TIMEZONE_LABEL={label}\n")
-        f.write(f"TIMEZONE_OFFSET={offset}\n")
-        f.write(f"TIMEZONE_NAME={tz_name}\n")
-        f.write(f"TIMEZONE_CITY={city}\n")
-        f.write(f"TIMEZONE_ABBREV={abbrev}\n")
-        f.write(f"IMAGE_MODE={image_mode}\n")
-        f.write(f"LABEL_MODE={label_mode}\n")
-    messagebox.showinfo("Saved", f"Config saved to {ENV_FILE}")
+        # Image mode logic
+        if image_mode == "day":
+            large_image, large_text = "clock_day", "Daytime"
+            small_image, small_text = "clock_night", "Nighttime"
+        elif image_mode == "night":
+            large_image, large_text = "clock_night", "Nighttime"
+            small_image, small_text = "clock_day", "Daytime"
+        else:  # auto
+            if 6 <= hour < 18:
+                large_image, large_text = "clock_day", "Daytime"
+                small_image, small_text = "clock_night", "Nighttime"
+            else:
+                large_image, large_text = "clock_night", "Nighttime"
+                small_image, small_text = "clock_day", "Daytime"
 
-def report_bug():
-    webbrowser.open("https://github.com/dareto-dream/timezonedrp/issues")
+        await RPC.update(
+            state=state_str,
+            details=time_str,
+            start=start_timestamp,
+            large_image=large_image,
+            large_text=large_text,
+            small_image=small_image,
+            small_text=small_text
+        )
 
-def buy_me_coffee():
-    webbrowser.open("https://buymeacoffee.com/dareto0ream")
+        for _ in range(60):
+            if stop_event and stop_event.is_set():
+                print("[DRP] Stop signal received, exiting presence loop.")
+                return
+            await asyncio.sleep(1)
 
-def launch_script():
-    global presence_thread, stop_event
-    save_env()
 
-    # Stop any existing presence thread
-    if stop_event is not None:
-        print("[GUI] Stopping previous presence thread...")
-        stop_event.set()  # Signal it to exit
-
-    # Start new presence thread with a fresh stop_event
-    import main
-    from threading import Event
-    stop_event = Event()
-    def run_presence():
-        main.run(stop_event=stop_event)
-    presence_thread = threading.Thread(target=run_presence, daemon=True)
-    presence_thread.start()
-
-def filter_timezones(event):
-    typed = search_var.get().lower()
-    filtered = [tz for tz in CITIES if typed in tz.lower()]
-    listbox.delete(0, tk.END)
-    for tz in filtered:
-        listbox.insert(tk.END, tz)
-    if filtered:
-        listbox.selection_set(0)
-        city_var.set(filtered[0])
-
-def on_select(event):
-    if listbox.curselection():
-        selected = listbox.get(listbox.curselection())
-        city_var.set(selected)
-
-root = tk.Tk()
-root.title("Discord Timezone DRP Config")
-root.minsize(620, 480)
-root.grid_columnconfigure(0, weight=1)
-root.grid_columnconfigure(1, weight=2)
-root.grid_columnconfigure(2, weight=1)
-
-# For Windows .ico or PNG (fallback for Linux/Mac)
-try:
-    root.iconbitmap("icon.ico")
-except Exception:
-    try:
-        from tkinter import PhotoImage
-        icon = PhotoImage(file="icon.png")
-        root.iconphoto(True, icon)
-    except Exception:
-        pass  # don't crash if no icon
-
-# Row 0: Discord Client ID
-tk.Label(root, text="Discord Client ID", font=default_font).grid(row=0, column=0, sticky="w", padx=8, pady=4)
-tk.Label(root, text=CLIENT_ID, font=default_font).grid(row=0, column=1, sticky="w", padx=8, pady=4)
-
-# Row 1: Search + Auto Detect
-tk.Label(root, text="Search Timezone:", font=default_font).grid(row=1, column=0, sticky="w", padx=8, pady=4)
-search_var = tk.StringVar()
-search_entry = tk.Entry(root, textvariable=search_var, width=32, font=default_font)
-search_entry.grid(row=1, column=1, sticky="w", padx=8, pady=4)
-tk.Button(root, text="Auto Detect Timezone", command=auto_detect_timezone, font=default_font).grid(row=1, column=2, padx=8, pady=4)
-
-# Row 2: Timezone Listbox
-tk.Label(root, text="Timezone (Region/City)", font=default_font).grid(row=2, column=0, sticky="w", padx=8, pady=4)
-city_var = tk.StringVar(value="Asia/Tashkent")
-listbox = tk.Listbox(root, height=8, width=32, font=default_font)
-listbox.grid(row=2, column=1, sticky="w", padx=8, pady=4)
-for tz in CITIES:
-    listbox.insert(tk.END, tz)
-
-# Load .env and auto-select previous config values
-load_dotenv(ENV_FILE, override=True)
-city_env        = os.getenv("TIMEZONE_NAME", CITIES[0])
-image_mode_env  = os.getenv("IMAGE_MODE", "Auto").capitalize()
-label_mode_env  = os.getenv("LABEL_MODE", "Abbreviation").capitalize()
-
-city_var.set(city_env)
-image_mode_var = tk.StringVar(root)
-image_mode_var.set(image_mode_env)
-label_mode_var = tk.StringVar(root)
-label_mode_var.set(label_mode_env)
-search_var.set(city_env)
-
-try:
-    idx = CITIES.index(city_env)
-    listbox.selection_clear(0, tk.END)
-    listbox.selection_set(idx)
-    listbox.see(idx)
-except ValueError:
-    listbox.selection_set(0)
-    city_var.set(CITIES[0])
-
-search_entry.bind('<KeyRelease>', filter_timezones)
-listbox.bind('<<ListboxSelect>>', on_select)
-
-# Row 3: Image Mode OptionMenu
-tk.Label(root, text="Image Mode", font=default_font).grid(row=3, column=0, sticky="w", padx=8, pady=4)
-tk.OptionMenu(root, image_mode_var, *IMAGE_MODES).grid(row=3, column=1, sticky="w", padx=8, pady=4)
-
-# Row 4: Label Style OptionMenu
-tk.Label(root, text="Label Style", font=default_font).grid(row=4, column=0, sticky="w", padx=8, pady=4)
-tk.OptionMenu(root, label_mode_var, *LABEL_MODES).grid(row=4, column=1, sticky="w", padx=8, pady=4)
-
-# Row 5: Save/Launch buttons
-tk.Button(root, text="Save Config", command=save_env, font=default_font).grid(row=5, column=0, padx=12, pady=12)
-tk.Button(root, text="Save and Launch", command=launch_script, font=default_font).grid(row=5, column=1, padx=12, pady=12)
-
-# Row 6: Report Bug/Buy Me a Coffee
-tk.Button(root, text="Report Bug", command=report_bug, font=default_font).grid(row=6, column=0, padx=12, pady=12)
-tk.Button(root, text="Buy Me a Coffee", command=buy_me_coffee, font=default_font).grid(row=6, column=1, padx=12, pady=12)
-
-root.mainloop()
+# Optional: run directly for dev
+if __name__ == "__main__":
+    run()
